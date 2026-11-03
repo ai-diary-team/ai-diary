@@ -76,6 +76,7 @@ flowchart LR
 | Authentication | JWT, BCrypt | 로그인 상태 확인과 비밀번호 암호화 |
 | Documentation | Swagger / OpenAPI | API 사용 설명서와 테스트 화면 |
 | CI | GitHub Actions | 코드가 빌드되는지 자동 확인 |
+| Deployment | AWS EC2, Docker Compose, Nginx | 컨테이너 기반 서비스 배포와 웹 요청 연결 |
 
 ## API 문서
 
@@ -192,6 +193,43 @@ npm run dev
 
 웹 화면은 `http://localhost:5173`에서 실행됩니다.
 
+## AWS EC2 배포
+
+로컬에서만 동작하던 서비스를 AWS EC2에 Docker Compose로 배포했습니다. 배포 환경에서는 프론트엔드, 백엔드, AI 분석 서버, 데이터베이스를 각각 컨테이너로 실행합니다.
+
+```mermaid
+flowchart LR
+    U[사용자 브라우저] -->|HTTP 80| N[Nginx / React]
+    N -->|/api 요청 전달| B[Spring Boot]
+    B --> DB[(MySQL)]
+    B --> A[FastAPI AI 서버]
+    A --> G[Gemini API]
+```
+
+- 외부에는 **HTTP 80번 포트만** 공개합니다.
+- MySQL, Spring Boot, FastAPI는 Docker 네트워크 안에서만 서로 통신합니다.
+- Nginx가 React 화면을 제공하고, `/api` 요청만 Spring Boot로 전달합니다.
+- 비밀번호, JWT 키, Gemini API 키는 서버의 `.env` 파일에만 두며 GitHub에 커밋하지 않습니다.
+
+### EC2에서 서비스 실행하기
+
+EC2에 SSH로 접속한 뒤 아래 명령으로 최신 코드를 받아 컨테이너를 빌드·실행합니다.
+
+```bash
+cd ~/ai-diary
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+서비스 상태와 백엔드 연결은 아래처럼 확인합니다.
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost/api/health
+```
+
+서버를 사용하지 않을 때는 EC2 인스턴스를 **중지**해 컴퓨팅 비용을 줄입니다. 다시 시작하면 공인 IP가 변경될 수 있으므로 AWS 콘솔에서 새 주소를 확인합니다.
+
 ## 코드 구조
 
 ```text
@@ -226,10 +264,10 @@ CI
 
 ## 앞으로 할 일
 
-- Docker Compose로 웹 서비스, 백엔드, AI 서버, DB 실행 환경 통일
-- 클라우드 배포와 자동 배포(CD) 연결
+- 도메인 연결과 HTTPS 적용
+- GitHub Actions와 EC2를 연결한 자동 배포(CD) 구성
 - API 자동 테스트와 MySQL 통합 테스트 추가
-- 사용자가 원할 때만 AI 분석을 받을 수 있는 설정 추가
+- 사용자 동의를 받는 AI 분석 설정 추가
 - 주간 감정 리포트 생성 기능
 - 공개 데이터셋 기반 경량 감정 분류 모델과 Gemini 결과 비교
 
