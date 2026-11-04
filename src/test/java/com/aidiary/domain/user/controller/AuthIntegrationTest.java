@@ -17,6 +17,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aidiary.domain.diary.repository.DiaryRepository;
+import com.aidiary.global.jwt.JwtProvider;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -31,6 +36,12 @@ class AuthIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private DiaryRepository diaryRepository;
+
+    @Autowired
+    private JwtProvider jwtProvider;
 
     @Test
     void 회원가입에_성공하면_사용자가_DB에_저장된다() throws Exception {
@@ -131,5 +142,48 @@ class AuthIntegrationTest {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+    @Test
+    void JWT_없이_일기를_작성하면_403을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/diaries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "인증 없는 일기",
+                                  "content": "로그인하지 않은 요청입니다."
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void JWT가_있으면_일기를_작성하고_DB에_저장한다() throws Exception {
+        User user = userRepository.save(new User(
+                "diary@example.com",
+                passwordEncoder.encode("password123!"),
+                "일기작성테스트"
+        ));
+
+        String accessToken = jwtProvider.createAccessToken(
+                user.getId(),
+                user.getEmail()
+        );
+
+        mockMvc.perform(post("/api/diaries")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "자동 테스트 일기",
+                                  "content": "JWT를 포함한 일기 작성 통합 테스트입니다."
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value("자동 테스트 일기"))
+                .andExpect(jsonPath("$.content").value(
+                        "JWT를 포함한 일기 작성 통합 테스트입니다."
+                ));
+
+        assertEquals(1, diaryRepository.count());
     }
 }
