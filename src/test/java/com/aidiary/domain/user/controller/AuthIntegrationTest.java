@@ -20,6 +20,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.aidiary.domain.diary.repository.DiaryRepository;
 import com.aidiary.global.jwt.JwtProvider;
 
+import com.aidiary.domain.diary.entity.Diary;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
@@ -185,5 +188,44 @@ class AuthIntegrationTest {
                 ));
 
         assertEquals(1, diaryRepository.count());
+    }
+    @Test
+    void 일기_목록은_로그인한_사용자의_기록만_조회한다() throws Exception {
+        User myUser = userRepository.save(new User(
+                "mine@example.com",
+                passwordEncoder.encode("password123!"),
+                "내기록사용자"
+        ));
+
+        User otherUser = userRepository.save(new User(
+                "other@example.com",
+                passwordEncoder.encode("password123!"),
+                "다른기록사용자"
+        ));
+
+        diaryRepository.save(new Diary(
+                myUser,
+                "내 일기",
+                "내가 작성한 일기입니다."
+        ));
+
+        diaryRepository.save(new Diary(
+                otherUser,
+                "다른 사람 일기",
+                "다른 사용자가 작성한 일기입니다."
+        ));
+
+        String accessToken = jwtProvider.createAccessToken(
+                myUser.getId(),
+                myUser.getEmail()
+        );
+
+        mockMvc.perform(get("/api/diaries")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].title").value("내 일기"));
     }
 }
