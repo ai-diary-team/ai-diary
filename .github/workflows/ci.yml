@@ -24,8 +24,8 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Compile Spring Boot
-        run: ./gradlew compileJava
+      - name: Run backend tests
+        run: ./gradlew test
 
   frontend-build:
     name: Frontend build
