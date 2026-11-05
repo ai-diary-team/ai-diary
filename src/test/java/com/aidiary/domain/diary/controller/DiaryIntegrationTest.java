@@ -19,6 +19,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aidiary.domain.emotion.entity.Emotion;
+import com.aidiary.domain.emotion.entity.EmotionAnalysis;
+import com.aidiary.domain.emotion.repository.EmotionAnalysisRepository;
+
+import java.util.Map;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -39,6 +44,9 @@ class DiaryIntegrationTest {
 
     @Autowired
     private JwtProvider jwtProvider;
+
+    @Autowired
+    private EmotionAnalysisRepository emotionAnalysisRepository;
 
     private User createUser(String email, String nickname) {
         User user = new User(
@@ -105,5 +113,123 @@ class DiaryIntegrationTest {
         mockMvc.perform(get("/api/diaries/{diaryId}", diary.getId())
                         .header("Authorization", "Bearer " + ownerAccessToken))
                 .andExpect(status().isOk());
+
+    }
+    @Test
+    void 키워드로_내_일기를_검색할_수_있다() throws Exception {
+        User user = createUser("search@example.com", "검색테스트");
+        String accessToken = createAccessToken(user);
+
+        createDiary(
+                user,
+                "카페에서 보낸 오후",
+                "조용한 카페에서 과제를 했다."
+        );
+
+        createDiary(
+                user,
+                "집에서 보낸 저녁",
+                "집에서 편하게 쉬었다."
+        );
+
+        mockMvc.perform(get("/api/diaries")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("keyword", "카페")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].title")
+                        .value("카페에서 보낸 오후"));
+    }
+    @Test
+    void 감정으로_내_일기를_필터링할_수_있다() throws Exception {
+        User user = createUser("emotion@example.com", "감정필터테스트");
+        String accessToken = createAccessToken(user);
+
+        Diary joyfulDiary = createDiary(
+                user,
+                "기분 좋은 날",
+                "오랜만에 즐거운 하루를 보냈다."
+        );
+
+        Diary sadDiary = createDiary(
+                user,
+                "조금 힘든 날",
+                "오늘은 마음이 조금 무거웠다."
+        );
+
+        createEmotionAnalysis(joyfulDiary, Emotion.JOY, 5);
+        createEmotionAnalysis(sadDiary, Emotion.SADNESS, 4);
+
+        mockMvc.perform(get("/api/diaries")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("emotion", "JOY")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].title")
+                        .value("기분 좋은 날"));
+    }
+    @Test
+    void 키워드와_감정을_함께_적용해_일기를_검색할_수_있다() throws Exception {
+        User user = createUser("combined@example.com", "복합검색테스트");
+        String accessToken = createAccessToken(user);
+
+        Diary cafeJoyDiary = createDiary(
+                user,
+                "카페에서 행복했던 오후",
+                "조용한 카페에서 좋은 시간을 보냈다."
+        );
+
+        Diary homeJoyDiary = createDiary(
+                user,
+                "집에서 행복했던 저녁",
+                "집에서 편하게 쉬며 기분이 좋았다."
+        );
+
+        Diary cafeSadDiary = createDiary(
+                user,
+                "카페에서 우울했던 오후",
+                "카페에 있었지만 마음은 조금 힘들었다."
+        );
+
+        createEmotionAnalysis(cafeJoyDiary, Emotion.JOY, 5);
+        createEmotionAnalysis(homeJoyDiary, Emotion.JOY, 4);
+        createEmotionAnalysis(cafeSadDiary, Emotion.SADNESS, 4);
+
+        mockMvc.perform(get("/api/diaries")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("keyword", "카페")
+                        .param("emotion", "JOY")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].title")
+                        .value("카페에서 행복했던 오후"));
+    }
+    private EmotionAnalysis createEmotionAnalysis(
+            Diary diary,
+            Emotion emotion,
+            int intensity
+    ) {
+        EmotionAnalysis analysis = new EmotionAnalysis(
+                diary,
+                "GEMINI",
+                emotion,
+                intensity,
+                Map.of(
+                        Emotion.JOY, emotion == Emotion.JOY ? intensity : 0,
+                        Emotion.SADNESS, emotion == Emotion.SADNESS ? intensity : 0,
+                        Emotion.ANGER, emotion == Emotion.ANGER ? intensity : 0,
+                        Emotion.ANXIETY, emotion == Emotion.ANXIETY ? intensity : 0,
+                        Emotion.CALM, emotion == Emotion.CALM ? intensity : 0
+                ),
+                "테스트용 감정 분석 피드백입니다."
+        );
+
+        return emotionAnalysisRepository.save(analysis);
     }
 }
