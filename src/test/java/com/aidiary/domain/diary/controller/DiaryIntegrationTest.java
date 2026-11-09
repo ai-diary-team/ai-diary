@@ -210,6 +210,50 @@ class DiaryIntegrationTest {
                 .andExpect(jsonPath("$.content[0].title")
                         .value("카페에서 행복했던 오후"));
     }
+    @Test
+    void 감정_트렌드는_요청한_일수만큼_반환하고_오늘의_점수를_포함한다() throws Exception {
+        User user = createUser("trend@example.com", "트렌드테스트");
+        String accessToken = createAccessToken(user);
+
+        Diary diary = createDiary(
+                user,
+                "오늘의 감정 기록",
+                "기분 좋은 하루를 보냈다."
+        );
+
+        createEmotionAnalysis(diary, Emotion.JOY, 4);
+
+        mockMvc.perform(get("/api/emotions/trends")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("days", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days").value(7))
+                .andExpect(jsonPath("$.trends.length()").value(7))
+                .andExpect(jsonPath("$.trends[6].scores.JOY").value(4.0));
+    }
+    @Test
+    void 삭제된_일기의_감정_분석은_트렌드에서_제외된다() throws Exception {
+        User user = createUser("deleted-trend@example.com", "삭제트렌드테스트");
+        String accessToken = createAccessToken(user);
+
+        Diary diary = createDiary(
+                user,
+                "삭제할 감정 기록",
+                "분석 결과가 있지만 삭제할 일기다."
+        );
+
+        createEmotionAnalysis(diary, Emotion.JOY, 5);
+
+        mockMvc.perform(delete("/api/diaries/{diaryId}", diary.getId())
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/emotions/trends")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("days", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trends[6].scores.JOY").value(0.0));
+    }
     private EmotionAnalysis createEmotionAnalysis(
             Diary diary,
             Emotion emotion,
