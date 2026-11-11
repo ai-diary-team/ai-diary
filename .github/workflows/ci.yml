@@ -49,3 +49,27 @@ jobs:
       - name: Build React frontend
         working-directory: frontend
         run: npm run build
+
+  deploy:
+    name: Deploy to EC2
+    needs: [backend-build, frontend-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Pull latest source and restart containers
+        run: |
+          cd /home/ubuntu/ai-diary
+          git switch main
+          git pull --ff-only origin main
+          docker compose -f docker-compose.prod.yml up -d --build
+
+      - name: Verify deployment health
+        run: |
+          for i in {1..12}; do
+            if curl --fail --silent http://localhost/api/health; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
