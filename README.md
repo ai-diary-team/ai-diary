@@ -6,6 +6,8 @@
 
 바쁜 하루를 보내다 보면 내가 어떤 기분으로 지냈는지 놓치기 쉽습니다. AI Diary는 사용자가 일기를 작성하면 Gemini 기반 AI가 글 속 감정을 분석하고, 짧은 공감 피드백과 감정 변화 그래프를 보여줍니다.
 
+> 이 저장소는 팀 프로젝트로 만들었습니다. 로그인부터 AI 분석, 테스트, Docker와 AWS 자동 배포까지 하나의 서비스가 동작하는 전체 과정을 담고 있습니다.
+
 ## 어떤 서비스인가요?
 
 1. 사용자가 오늘 있었던 일과 마음을 일기로 작성합니다.
@@ -75,7 +77,7 @@ flowchart LR
 | AI | Gemini API, FastAPI, Python | 감정 분석과 공감 피드백 생성 |
 | Authentication | JWT, BCrypt | 로그인 상태 확인과 비밀번호 암호화 |
 | Documentation | Swagger / OpenAPI | API 사용 설명서와 테스트 화면 |
-| CI | GitHub Actions | 코드가 빌드되는지 자동 확인 |
+| CI/CD | GitHub Actions, Self-hosted Runner | 자동 테스트·웹 빌드 확인과 EC2 자동 배포 |
 | Deployment | AWS EC2, Docker Compose, Nginx | 컨테이너 기반 서비스 배포와 웹 요청 연결 |
 
 ## API 문서
@@ -131,6 +133,29 @@ AI 분석에는 몇 초가 걸리거나 일시적으로 실패할 수 있습니�
 
 ## 로컬에서 실행하기
 
+### 가장 간단한 방법: Docker로 API 서버 실행하기
+
+Docker Desktop이 설치되어 있다면 DB, 백엔드, AI 분석 서버를 한 번에 실행할 수 있습니다.
+
+```bash
+cp .env.example .env
+cp gemini-experiment/.env.example gemini-experiment/.env
+```
+
+생성된 두 환경설정 파일에 DB 비밀번호, JWT Secret, Gemini API Key를 입력한 뒤 실행합니다. 이 파일에는 비밀번호와 API 키가 들어가므로 GitHub에 올리면 안 됩니다.
+
+```bash
+docker compose up --build -d
+```
+
+정상 실행 여부는 아래 명령으로 확인합니다.
+
+```bash
+curl http://localhost:8080/api/health
+```
+
+`{"status":"ok"}`가 나오면 성공입니다. 로컬 Docker Compose는 DB·백엔드·AI 서버를 실행하며, 웹 화면은 아래 4단계처럼 별도로 실행합니다.
+
 ### 준비물
 
 - Java 17
@@ -138,6 +163,10 @@ AI 분석에는 몇 초가 걸리거나 일시적으로 실패할 수 있습니�
 - Node.js 20 이상
 - Python 3.9 이상
 - Gemini API Key
+
+### 직접 실행하는 방법
+
+Docker를 사용하지 않는 경우 아래 순서대로 실행합니다.
 
 ### 1. 데이터베이스 만들기
 
@@ -193,7 +222,7 @@ npm run dev
 
 웹 화면은 `http://localhost:5173`에서 실행됩니다.
 
-## AWS EC2 배포
+## AWS EC2 배포와 자동 배포
 
 로컬에서만 동작하던 서비스를 AWS EC2에 Docker Compose로 배포했습니다. 배포 환경에서는 프론트엔드, 백엔드, AI 분석 서버, 데이터베이스를 각각 컨테이너로 실행합니다.
 
@@ -230,6 +259,24 @@ curl http://localhost/api/health
 
 서버를 사용하지 않을 때는 EC2 인스턴스를 **중지**해 컴퓨팅 비용을 줄입니다. 다시 시작하면 공인 IP가 변경될 수 있으므로 AWS 콘솔에서 새 주소를 확인합니다.
 
+### main에 머지하면 자동으로 배포됩니다
+
+GitHub Actions가 Pull Request와 push를 확인합니다. 특히 `main` 브랜치에 코드가 합쳐지면 EC2에 설치한 GitHub Actions runner가 다음 과정을 자동으로 수행합니다.
+
+```text
+main 브랜치 머지
+      ↓
+백엔드 테스트 · 프론트엔드 빌드 확인
+      ↓
+EC2에서 최신 코드 받기
+      ↓
+Docker 컨테이너 다시 빌드·실행
+      ↓
+/api/health 응답 확인
+```
+
+배포 과정 중 문제가 생기면 GitHub Actions 실행 화면에서 어느 단계에서 멈췄는지 확인할 수 있습니다.
+
 ## 코드 구조
 
 ```text
@@ -245,15 +292,18 @@ curl http://localhost/api/health
 └── .github/workflows/ci.yml     # 자동 빌드 검사
 ```
 
-## 코드 품질 확인
+## 테스트와 코드 품질 확인
 
 GitHub Actions는 `main`과 `feature/**` 브랜치에 코드가 올라오거나 Pull Request를 만들 때 자동으로 실행됩니다.
 
 ```text
 CI
-├── Backend: Java 코드 컴파일 확인
-└── Frontend: TypeScript 검사 및 웹 빌드 확인
+├── Backend: 회원가입·로그인·일기·감정 분석 통합 테스트
+├── Frontend: TypeScript 검사 및 웹 빌드
+└── main 머지 시: EC2 자동 배포와 헬스체크
 ```
+
+백엔드 테스트에서는 실제 Gemini API를 호출하지 않고 가짜 응답을 사용합니다. 따라서 테스트 비용과 외부 API 상태에 영향을 받지 않으면서, 감정 분석 결과 저장과 오류 처리를 검증할 수 있습니다.
 
 ## 역할 분담
 
@@ -262,13 +312,22 @@ CI
 | 찬웅 | Gemini 프롬프트 설계, FastAPI AI 서버, AI 응답 품질 검증 |
 | 민정 | Spring Boot API·DB, JWT 인증, 감정 트렌드, 프론트 연동, CI·배포 준비 |
 
-## 앞으로 할 일
+## 현재 상태와 향후 개선 방향
+
+완료한 항목입니다.
+
+- 회원가입·로그인, JWT 인증, 일기 CRUD, 검색, 감정 분석과 트렌드 구현
+- Swagger API 문서화
+- 백엔드 통합 테스트와 GitHub Actions CI 구성
+- Docker Compose 기반 로컬·EC2 실행 환경 구성
+- `main` 머지 시 EC2로 자동 배포되는 CD 구성
+
+더 발전시키고 싶은 항목입니다.
 
 - 도메인 연결과 HTTPS 적용
-- GitHub Actions와 EC2를 연결한 자동 배포(CD) 구성
-- API 자동 테스트와 MySQL 통합 테스트 추가
 - 사용자 동의를 받는 AI 분석 설정 추가
 - 주간 감정 리포트 생성 기능
+- AI 분석을 비동기로 처리해 사용자가 기다리는 시간 줄이기
 - 공개 데이터셋 기반 경량 감정 분류 모델과 Gemini 결과 비교
 
 ## 보안과 개인정보
