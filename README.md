@@ -1,4 +1,4 @@
-# AI Diary
+ㅎ# AI Diary
 
 [![CI](https://github.com/chanwoong00/ai-diary/actions/workflows/ci.yml/badge.svg)](https://github.com/chanwoong00/ai-diary/actions/workflows/ci.yml)
 
