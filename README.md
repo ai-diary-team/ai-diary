@@ -315,7 +315,7 @@ CI
 | 담당 | 주요 업무 |
 | --- | --- |
 | 찬웅 | Gemini 프롬프트 설계, FastAPI AI 서버, AI 응답 품질 검증 |
-| 민정 | Spring Boot API·DB, JWT 인증, 감정 트렌드, 프론트 연동, CI·배포 준비 |
+| 민정 | Spring Boot API·DB, JWT 인증, 감정 트렌드, 프론트 연동, 통합 테스트, Docker·AWS EC2 CI/CD 배포 |
 
 ## 현재 상태와 향후 개선 방향
 
