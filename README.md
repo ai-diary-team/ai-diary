@@ -114,6 +114,79 @@ Swagger는 프론트엔드와 백엔드가 주고받는 약속(API)을 한곳에
 | GET | `/api/emotions/trends?days=7` | 최근 7일 또는 30일 감정 변화 조회 |
 | GET | `/api/users/me/streak` | 연속 일기 작성일 조회 |
 
+## 데이터베이스 설계
+
+서비스에서 꼭 저장해야 하는 대상을 먼저 세 가지로 나눴습니다.
+
+- **사용자**: 누가 서비스를 이용하는지
+- **일기**: 사용자가 언제 어떤 내용을 작성했는지
+- **감정 분석 결과**: AI가 일기를 분석해 어떤 결과를 주었는지
+
+```mermaid
+erDiagram
+    USERS ||--o{ DIARIES : "작성한다"
+    DIARIES ||--o{ EMOTION_ANALYSES : "분석 결과를 가진다"
+
+    USERS {
+        bigint id PK
+        varchar email UK
+        varchar password_hash
+        varchar nickname UK
+        datetime created_at
+    }
+
+    DIARIES {
+        bigint id PK
+        bigint user_id FK
+        varchar title
+        text content
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+    }
+
+    EMOTION_ANALYSES {
+        bigint id PK
+        bigint diary_id FK
+        varchar source
+        varchar emotion
+        int intensity
+        int joy_score
+        int sadness_score
+        int anger_score
+        int anxiety_score
+        int calm_score
+        text feedback
+        datetime created_at
+    }
+```
+
+### 테이블은 왜 이렇게 나눴나요?
+
+| 테이블 | 저장하는 내용 | 나눈 이유 |
+| --- | --- | --- |
+| `users` | 계정 정보 | 한 사용자가 여러 일기를 쓸 수 있기 때문입니다. 이메일과 닉네임은 중복되지 않도록 설정했습니다. |
+| `diaries` | 제목, 본문, 작성·수정·삭제 시간 | 일기는 반드시 한 명의 사용자에게 속합니다. `user_id`로 작성자를 연결해 다른 사용자의 일기를 볼 수 없도록 합니다. |
+| `emotion_analyses` | AI 분석 감정, 점수, 피드백 | 같은 일기도 다시 분석할 수 있고, 나중에는 다른 AI 모델 결과와 비교할 수도 있어 분석 결과를 별도 테이블로 분리했습니다. |
+
+### 설계할 때 고려한 점
+
+#### 사용자와 일기는 1:N 관계입니다
+
+사용자 한 명은 여러 개의 일기를 작성할 수 있지만, 일기 한 개는 한 명의 사용자에게만 속합니다. 그래서 `diaries.user_id`를 외래 키로 두었습니다. JWT에서 확인한 사용자 ID와 `user_id`를 비교해 본인 일기만 조회·삭제할 수 있습니다.
+
+#### 일기와 감정 분석 결과도 1:N 관계입니다
+
+감정 분석 결과를 일기 테이블에 바로 넣으면, 다시 분석할 때 기존 결과를 덮어써야 합니다. AI Diary는 분석 요청마다 결과를 새로 저장하고, 화면에는 최신 분석 결과를 보여줍니다. 이 구조는 추후 Gemini와 다른 모델의 분석 결과를 비교할 때도 확장하기 쉽습니다.
+
+#### 감정 점수는 5개 컬럼으로 저장합니다
+
+대표 감정 하나만 저장하면 감정 변화 그래프를 만들기 어렵습니다. 그래서 기쁨·슬픔·분노·불안·평온 점수를 각각 저장했습니다. 덕분에 최근 7일 또는 30일 동안 각 감정이 어떻게 달라졌는지 계산할 수 있습니다.
+
+#### 일기는 바로 지우지 않고 소프트 삭제합니다
+
+`deleted_at`에 삭제 시각을 저장하고, 실제 데이터는 바로 삭제하지 않습니다. 삭제한 일기는 목록·검색·감정 트렌드·연속 기록 계산에서 제외합니다. 나중에 복구 기능이나 삭제 이력 관리가 필요할 때도 확장할 수 있습니다.
+
 ## 구현하며 고민한 점
 
 ### 일기 저장과 AI 분석을 분리했습니다
